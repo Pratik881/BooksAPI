@@ -1,4 +1,5 @@
 ﻿using BookStoreApi.Data;
+using BookStoreApi.DTO;
 using BookStoreApi.Models;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
@@ -73,7 +74,7 @@ namespace BookStoreApi.Controllers
 		}
 
 		[HttpPost]
-		public async Task<ActionResult<Book>> PostBook(Book book)
+		public async Task<ActionResult<Book>> PostBook(AddBookRequest book)
 		{
 			_context.Books.Add(book);
 			await _context.SaveChangesAsync();

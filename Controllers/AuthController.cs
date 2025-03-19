@@ -6,9 +6,10 @@ using System.Text;
 using BookStoreApi.Models;
 using BookStoreApi.Data;
 using Microsoft.EntityFrameworkCore;
+using BookStoreApi.DTO;
 namespace BookStoreApi.Controllers
 {
-	[Route("api/[controller]")]
+    [Route("api/[controller]")]
 	[ApiController]
 	public class AuthController : ControllerBase
 	{
@@ -22,21 +23,30 @@ namespace BookStoreApi.Controllers
 			_configuration = configuration;
 		}
 
-		[HttpPost("register")]
-		public async Task<IActionResult> Register(User user)
-		{
-			var existingUser = await _context.Users.FirstOrDefaultAsync(u => u.Email == user.Email);
-			if (existingUser != null)
-			{
-				return BadRequest("User already exists");
-			}
-			user.PasswordHash = BCrypt.Net.BCrypt.HashPassword(user.PasswordHash);
-			_context.Users.Add(user);
-			await _context.SaveChangesAsync();
-			return Ok("User registered successfully");
-		}
+        [HttpPost("register")]
+        public async Task<IActionResult> Register([FromBody] RegisterRequest request)
+        {
+            var existingUser = await _context.Users.FirstOrDefaultAsync(u => u.Email == request.Email);
+            if (existingUser != null)
+            {
+                return BadRequest("User already exists");
+            }
 
-		[HttpPost("login")]
+            var user = new User
+            {
+                Username = request.Username,
+                Email = request.Email,
+                PasswordHash = BCrypt.Net.BCrypt.HashPassword(request.Password),
+                Role = "User" // Default role
+            };
+
+            _context.Users.Add(user);
+            await _context.SaveChangesAsync();
+            return Ok("User registered successfully");
+        }
+
+
+        [HttpPost("login")]
 		public async Task<IActionResult> Login([FromBody] LoginRequest request)
 		{
 			var existingUser = await _context.Users.FirstOrDefaultAsync(u => u.Username == request.Username);
