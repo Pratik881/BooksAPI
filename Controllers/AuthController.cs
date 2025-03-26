@@ -72,7 +72,8 @@ namespace BookStoreApi.Controllers
 				new Claim(JwtRegisteredClaimNames.Sub,user.Id.ToString()),
 				new Claim(JwtRegisteredClaimNames.Email,user.Email),
 				new Claim(ClaimTypes.Role,user.Role),
-				
+				new Claim(ClaimTypes.NameIdentifier,user.Id.ToString())
+			//NameIdentifier is a claim type used in ASP.NET Core Identity
 			};
 			var token = new JwtSecurityToken(
 				issuer: jwtSettings["Issuer"],
