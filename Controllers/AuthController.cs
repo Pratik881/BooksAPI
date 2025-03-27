@@ -7,6 +7,7 @@ using BookStoreApi.Models;
 using BookStoreApi.Data;
 using Microsoft.EntityFrameworkCore;
 using BookStoreApi.DTO;
+using System.Security.Cryptography;
 namespace BookStoreApi.Controllers
 {
     [Route("api/[controller]")]
@@ -22,6 +23,39 @@ namespace BookStoreApi.Controllers
 			_context = context;
 			_configuration = configuration;
 		}
+
+        [HttpPost("refresh")]
+        public async Task<IActionResult> Refresh([FromBody] RefreshTokenRequest request)
+        {
+            var storedToken = await _context.RefreshTokens.FirstOrDefaultAsync(t => t.Token == request.RefreshToken);
+            if (storedToken == null || storedToken.Expires < DateTime.UtcNow || storedToken.IsRevoked)
+            {
+                return Unauthorized("Invalid or expired refresh token");
+            }
+
+            var user = await _context.Users.FindAsync(storedToken.UserId);
+            if (user == null)
+            {
+                return Unauthorized("User not found");
+            }
+
+			//generate new tokens
+			var newAcessToken=GenerateJwtToken(user);
+			var newRefreshToken = GenerateRefreshToken();
+
+			//update refresh tokens
+			storedToken.Token = newRefreshToken;
+			storedToken.Expires = DateTime.UtcNow.AddDays(7);
+			await _context.SaveChangesAsync();
+
+			return Ok(
+				new
+				{
+					AccessTolen = newAcessToken,
+					RefreshToken = newRefreshToken
+				}
+			);
+        }
 
         [HttpPost("register")]
         public async Task<IActionResult> Register([FromBody] RegisterRequest request)
@@ -50,6 +84,7 @@ namespace BookStoreApi.Controllers
 		public async Task<IActionResult> Login([FromBody] LoginRequest request)
 		{
 			var existingUser = await _context.Users.FirstOrDefaultAsync(u => u.Username == request.Username);
+
 			if (existingUser == null)
 			{
 				return Unauthorized(new { message = "user is not found" });
@@ -58,8 +93,38 @@ namespace BookStoreApi.Controllers
 			if (! BCrypt.Net.BCrypt.Verify(request.Password, existingUser.PasswordHash)) {
 				return Unauthorized(new {message="Invalid password"});
 			}
-			var token = GenerateJwtToken(existingUser);
-			return Ok(new { token });
+			var accessToken = GenerateJwtToken(existingUser);
+			var refreshToken = GenerateRefreshToken();
+
+			var newRefreshToken = new RefreshToken
+			{
+				Token = refreshToken,
+				UserId = existingUser.Id,
+				Expires = DateTime.UtcNow.AddDays(7),
+				IsRevoked = false
+			};
+
+			_context.RefreshTokens.Add(newRefreshToken);
+			await _context.SaveChangesAsync();
+
+			return Ok(
+				new
+				{
+					AccessToken = accessToken,
+					RefreshToken = refreshToken
+				}
+				);
+		}
+
+
+		private string GenerateRefreshToken()
+		{
+			var randonBytes = new byte[64];
+			using(var rng=RandomNumberGenerator.Create())
+			{
+				rng.GetBytes(randonBytes);
+			}
+			return Convert.ToBase64String(randonBytes);
 		}
 
 		private string GenerateJwtToken(User user)
@@ -87,7 +152,23 @@ namespace BookStoreApi.Controllers
 			return new JwtSecurityTokenHandler().WriteToken(token);
 		}
 
+        [HttpPost("logout")]
+        public async Task<IActionResult> Logout([FromBody] RefreshTokenRequest request)
+        {
+            var storedToken = await _context.RefreshTokens.FirstOrDefaultAsync(t=>t.Token==request.RefreshToken);
+			if(storedToken!=null)
+			{
+				storedToken.IsRevoked = true;
+				await _context.SaveChangesAsync();
+			}
+
+			return Ok("logged out successfully");
+
+		}
+
 	}
+
+	
+
 }
 
-//something new
