@@ -2,160 +2,170 @@
 using BookStoreApi.DTO;
 using BookStoreApi.Models;
 using Microsoft.AspNetCore.Authorization;
-using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using System.Security.Claims;
 
 namespace BookStoreApi.Controllers
 {
-	[Route("api/[controller]")]
-	[ApiController]
-	[Authorize]
-	public class BooksController : ControllerBase
-	{
-		private readonly BookStoreContext _context;
+    [Route("api/[controller]")]
+    [ApiController]
+    [Authorize]
+    public class BooksController : ControllerBase
+    {
+        private readonly BookStoreContext _context;
 
-		public BooksController(BookStoreContext context)
-		{
-			_context = context;
-		}
-	
+        public BooksController(BookStoreContext context)
+        {
+            _context = context;
+        }
 
-		//Get :api/Books
-		[HttpGet]
-		public async Task<ActionResult<IEnumerable<Book>>> GetBooks(
-			string? author,
-			string? sort,
-			int page = 1,
-			int size = 100
 
-			)
-		{
-			var userId = int.Parse(User.FindFirst(ClaimTypes.NameIdentifier)?.Value ?? "0");
-			if (userId == 0)
-			{
-				return Unauthorized("Invalid token or user not authenticated ");
-			}
-			var booksQuery = _context.Books.Where(b => b.UserId == userId);
-			if (!string.IsNullOrEmpty(author))
-			{
-				booksQuery = booksQuery.Where(b => b.Author.Contains(author));
-			}
-			booksQuery = sort switch
-			{
-				"price_asc" => booksQuery.OrderBy(b => b.Price),
-				"price_desc" => booksQuery.OrderByDescending(b => b.Price),
-				"title_asc" => booksQuery.OrderBy(b => b.Title),
-				"title_desc" => booksQuery.OrderByDescending(b => b.Title),
-				_ => booksQuery
-			};
-			booksQuery = booksQuery.Skip((page - 1) * size).Take(size);
+        [HttpGet]
+        public async Task<ActionResult<IEnumerable<Book>>> GetBooks(
+            string? author,
+            string? sort,
+            int page = 1,
+            int size = 100)
+        {
+            var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier);
+            if (userIdClaim == null || !int.TryParse(userIdClaim.Value, out int userId))
+            {
+                return Unauthorized();
+            }
 
-			return await booksQuery.ToListAsync();
-		}
+            var booksQuery = _context.Books.Where(b => b.UserId == userId);
 
-		[HttpPost]
-		public async Task<ActionResult<Book>> PostBook(AddBookRequest request)
-		{
+            if (!string.IsNullOrEmpty(author))
+            {
+                booksQuery = booksQuery.Where(b => b.Author.ToLower().Contains(author.ToLower()));
+            }
 
-			var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier);
-			if (userIdClaim == null)
-			{
-				return Unauthorized("Invalid token:User id not found");
+            booksQuery = sort switch
+            {
+                "price_asc" => booksQuery.OrderBy(b => b.Price),
+                "price_desc" => booksQuery.OrderByDescending(b => b.Price),
+                "title_asc" => booksQuery.OrderBy(b => b.Title),
+                "title_desc" => booksQuery.OrderByDescending(b => b.Title),
+                _ => booksQuery
+            };
 
-			}
-			int userId = int.Parse(userIdClaim.Value);
-			var user = await _context.Users.FindAsync(userId);
-			if (user == null)
-			{
-				return BadRequest("user not found");
-			}
+            booksQuery = booksQuery.Skip((page - 1) * size).Take(size);
+            var books = await booksQuery.ToListAsync();
 
-			var book = new Book
-			{
-				Title = request.Title,
-				Author = request.Author,
-				Price = request.Price,
-				UserId = userId
+            if (books.Count == 0)
+            {
+                return NotFound("No books found for this user.");
+            }
 
-			};
-			_context.Books.Add(book);
-			await _context.SaveChangesAsync();
-			var bookDTO = new BookDTO
-			{
-				Id = book.Id,
-				Title = book.Title,
-				Author = book.Author,
-				Price = book.Price
-			};
-			return CreatedAtAction(nameof(GetBooks), new { id = book.Id }, bookDTO);
+            return Ok(books);
+        }
 
-		}
+        [HttpPost]
+        public async Task<ActionResult<Book>> PostBook(AddBookRequest request)
+        {
+            if (request == null)
+            {
+                return BadRequest("Invalid request");
+            }
 
-		[HttpPut("{id}")]
-		public async Task<ActionResult> PutBook(int id, PutBookDto bookDto)
-		{
-			if (bookDto == null || id != bookDto.Id)
-			{
-				return BadRequest("Invalid Book data");
-			}
+            if (string.IsNullOrWhiteSpace(request.Title) ||
+               string.IsNullOrWhiteSpace(request.Author) ||
+               request.Price <= 0)
+            {
+                return BadRequest("Title, Author, and Price are required.");
+            }
 
-			var book=await _context.Books.FindAsync(id);
-			if(book == null)
-			{
-				return NotFound(); 
-			}
-			book.Title=bookDto.Title;
-			book.Author=bookDto.Author;
-			book.Price=bookDto.Price;
-			try
-			{
-				await _context.SaveChangesAsync();
-			}
-			catch (DbUpdateConcurrencyException)
-			{
-				if (!_context.Books.Any(b => b.Id == id))
-				{
-					return NotFound();
+            var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier);
+            if (userIdClaim == null || !int.TryParse(userIdClaim.Value, out int userId))
+            {
+                return Unauthorized();
+            }
 
-				}
-				throw;
-			}
-			return NoContent();
-			
-		}
-		
-		[HttpDelete("{id}")]
-		public async Task<ActionResult> DeleteBook(int id)
-		{
-			var userId = int.Parse(User.FindFirst(ClaimTypes.NameIdentifier)?.Value ?? "0");
-			var book = await _context.Books.FindAsync(id);
-			if (book == null)
-			{
-				return NotFound();
-			}
-				
+            var book = new Book
+            {
+                Title = request.Title,
+                Author = request.Author,
+                Price = request.Price,
+                UserId = userId
+            };
 
-			if(book.UserId!= userId)
-			{
-				return Forbid();
-			}
-			_context.Books.Remove(book);
+            _context.Books.Add(book);
+            await _context.SaveChangesAsync();
+
+            var bookDTO = new BookDTO
+            {
+                Id = book.Id,
+                Title = book.Title,
+                Author = book.Author,
+                Price = book.Price
+            };
+
+            return CreatedAtAction(nameof(GetBooks), new { id = book.Id }, bookDTO);
+        }
+
+        [HttpPut("{id}")]
+        public async Task<ActionResult> PutBook(int id, PutBookDto bookDto)
+        {
+            if (bookDto == null || id != bookDto.Id)
+            {
+                return BadRequest("Invalid book data.");
+            }
+
+            var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier);
+            if (userIdClaim == null || !int.TryParse(userIdClaim.Value, out int userId))
+            {
+                return Unauthorized();
+            }
+
+            var book = await _context.Books.FirstOrDefaultAsync(b => b.Id == id && b.UserId == userId);
+            if (book == null)
+            {
+                return NotFound("Book not found or doesn't belong to the user.");
+            }
+
+            book.Title = bookDto.Title;
+            book.Author = bookDto.Author;
+            book.Price = bookDto.Price;
+
             try
             {
-                await _context.SaveChangesAsync(); 
+                await _context.SaveChangesAsync();
+            }
+            catch (DbUpdateConcurrencyException)
+            {
+                return Conflict("The book was updated by another process.");
+            }
+
+            return NoContent();
+        }
+
+        [HttpDelete("{id}")]
+        public async Task<ActionResult> DeleteBook(int id)
+        {
+            var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier);
+            if (userIdClaim == null || !int.TryParse(userIdClaim.Value, out int userId))
+            {
+                return Unauthorized();
+            }
+
+            var book = await _context.Books.FirstOrDefaultAsync(b => b.Id == id && b.UserId == userId);
+            if (book == null)
+            {
+                return NotFound("Book not found or doesn't belong to the user.");
+            }
+
+            _context.Books.Remove(book);
+            try
+            {
+                await _context.SaveChangesAsync();
             }
             catch (DbUpdateException)
             {
                 return StatusCode(500, "Internal server error while deleting the book.");
             }
 
-			return NoContent();
-
-
-
+            return NoContent();
         }
-	}
-	}
-
+    }
+}
