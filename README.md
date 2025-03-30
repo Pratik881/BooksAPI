@@ -26,7 +26,7 @@ The **BookStore API** is a RESTful API built with **ASP.NET Core** that allows u
 ### **1️⃣ Clone the Repository**
 
 ```sh
-git clone https://github.com/yourusername/BookStoreApi.git
+git clone https://github.com/Pratik881/BooksAPI.git
 cd BookStoreApi
 ```
 
