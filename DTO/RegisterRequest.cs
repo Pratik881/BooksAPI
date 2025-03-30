@@ -4,9 +4,6 @@ namespace BookStoreApi.DTO
 {
     public class RegisterRequest
     {
-        [Required]
-        public string Username {  get; set; }
-
 
         [Required]
         [EmailAddress]
@@ -14,9 +11,6 @@ namespace BookStoreApi.DTO
 
         [Required]
         public string Password { get; set; }
-
-
-
 
     }
 }

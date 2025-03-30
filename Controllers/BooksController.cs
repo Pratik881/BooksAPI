@@ -22,7 +22,7 @@ namespace BookStoreApi.Controllers
 
 
         [HttpGet]
-        public async Task<ActionResult<IEnumerable<Book>>> GetBooks(
+        public async Task<ActionResult<IEnumerable<BookDTO>>> GetBooks(
             string? author,
             string? sort,
             int page = 1,
@@ -51,7 +51,15 @@ namespace BookStoreApi.Controllers
             };
 
             booksQuery = booksQuery.Skip((page - 1) * size).Take(size);
-            var books = await booksQuery.ToListAsync();
+            var books = await booksQuery.Select(
+                b => new BookDTO
+                {
+                    Id = b.Id,
+                    Title = b.Title,
+                    Author=b.Author,
+                    Price=b.Price
+
+                }).ToListAsync();
 
             if (books.Count == 0)
             {

@@ -78,6 +78,11 @@ namespace BookStoreApi.Controllers
 		[HttpPost("register")]
 		public async Task<IActionResult> Register([FromBody] RegisterRequest request)
 		{
+
+			if (!ModelState.IsValid)
+			{
+				return BadRequest(ModelState);
+			}
 			var existingUser = await _context.Users.FirstOrDefaultAsync(u => u.Email == request.Email);
 			if (existingUser != null)
 			{
@@ -86,7 +91,6 @@ namespace BookStoreApi.Controllers
 
 			var user = new User
 			{
-				Username = request.Username,
 				Email = request.Email,
 				PasswordHash = BCrypt.Net.BCrypt.HashPassword(request.Password),
 				Role = "User" // Default role
@@ -101,7 +105,11 @@ namespace BookStoreApi.Controllers
 		[HttpPost("login")]
 		public async Task<IActionResult> Login([FromBody] LoginRequest request)
 		{
-			var existingUser = await _context.Users.FirstOrDefaultAsync(u => u.Username == request.Username);
+			if(!ModelState.IsValid)
+			{
+				return BadRequest(ModelState);
+			}
+			var existingUser = await _context.Users.FirstOrDefaultAsync(u => u.Email == request.Email);
 
 			if (existingUser == null)
 			{
@@ -154,33 +162,49 @@ namespace BookStoreApi.Controllers
 			}
 			return Convert.ToBase64String(randonBytes);
 		}
+        private string GenerateJwtToken(User user)
+        {
+            var jwtSettings = _configuration.GetSection("Jwt");
 
-		private string GenerateJwtToken(User user)
-		{
-			var jwtSettings = _configuration.GetSection("Jwt");
-			var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtSettings["Key"]));
+            
+            var keyString = jwtSettings["Key"] ??
+                throw new InvalidOperationException("JWT Key is not configured");
+            var issuer = jwtSettings["Issuer"] ??
+                throw new InvalidOperationException("JWT Issuer is not configured");
+            var audience = jwtSettings["Audience"] ??
+                throw new InvalidOperationException("JWT Audience is not configured");
 
-			var claims = new[]
-			{
-				new Claim(JwtRegisteredClaimNames.Sub,user.Id.ToString()),
-				new Claim(JwtRegisteredClaimNames.Email,user.Email),
-				new Claim(ClaimTypes.Role,user.Role),
-				new Claim(ClaimTypes.NameIdentifier,user.Id.ToString())
-			//NameIdentifier is a claim type used in ASP.NET Core Identity
-			};
-			var token = new JwtSecurityToken(
-				issuer: jwtSettings["Issuer"],
-				audience: jwtSettings["Audience"],
-				claims: claims,
-				expires: DateTime.UtcNow.AddMinutes(Convert.ToDouble(jwtSettings["ExpiryMinutes"])),
-				signingCredentials: new SigningCredentials(key, SecurityAlgorithms.HmacSha256)
+            if (!double.TryParse(jwtSettings["ExpiryMinutes"], out double expiryMinutes))
+                throw new InvalidOperationException("JWT ExpiryMinutes is not properly configured");
 
-				);
+            
+            if (Encoding.UTF8.GetBytes(keyString).Length < 32)
+                throw new InvalidOperationException("JWT Key must be at least 32 bytes (256 bits)");
 
-			return new JwtSecurityTokenHandler().WriteToken(token);
-		}
+            var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(keyString));
 
-		[HttpPost("logout")]
+            var claims = new List<Claim>
+    {
+        new Claim(JwtRegisteredClaimNames.Sub, user.Id.ToString()),
+        new Claim(JwtRegisteredClaimNames.Email, user.Email),
+        new Claim(ClaimTypes.Role, user.Role),
+        new Claim(ClaimTypes.NameIdentifier, user.Id.ToString()),
+        new Claim(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString())
+    };
+
+            var token = new JwtSecurityToken(
+                issuer: issuer,
+                audience: audience,
+                claims: claims,
+                notBefore: DateTime.UtcNow,
+                expires: DateTime.UtcNow.AddMinutes(expiryMinutes),
+                signingCredentials: new SigningCredentials(key, SecurityAlgorithms.HmacSha256)
+            );
+
+            return new JwtSecurityTokenHandler().WriteToken(token);
+        }
+
+        [HttpPost("logout")]
 		public async Task<IActionResult> Logout()
 		{
 			if (!Request.Cookies.TryGetValue("refreshToken", out var refreshToken))
